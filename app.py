@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from datetime import datetime
 
 # Add project root to sys.path
@@ -191,40 +192,120 @@ elif selected_menu.startswith("2."):
     with col_left:
         st.subheader(f"📈 Chart Pergerakan & Volume Konsolidasi: {ticker}")
         
-        # Synthetic Candlestick with sideways box
-        dates = pd.date_range(end=datetime.today(), periods=20, freq='B')
-        np.random.seed(42)
-        base_price = 2700 if ticker == "PTBA" else 10000
-        close_prices = base_price + np.cumsum(np.random.randn(20) * 15)
-        high_prices = close_prices + np.random.rand(20) * 20
-        low_prices = close_prices - np.random.rand(20) * 20
-        open_prices = close_prices + np.random.randn(20) * 10
-        volumes = np.random.randint(15000000, 45000000, size=20)
-        volumes[-3:] = volumes[-3:] * 2  # Volume surge in last 3 days
+        # Data simulation tailored to selected ticker
+        ticker_prices = {
+            "PTBA": 2710,
+            "BBCA": 10250,
+            "MEDC": 1350,
+            "ACES": 845,
+            "BRMS": 172
+        }
+        base_price = ticker_prices.get(ticker, 2500)
         
-        fig = go.Figure()
-        fig.add_trace(go.Candlestick(
-            x=dates, open=open_prices, high=high_prices, low=low_prices, close=close_prices,
-            name="Price"
-        ))
+        dates = pd.date_range(end=datetime.today(), periods=25, freq='B')
+        np.random.seed(abs(hash(ticker)) % 10000)
+        step_volatility = base_price * 0.007
         
-        # Add Consolidation Box
+        price_noise = np.random.randn(25) * step_volatility
+        close_prices = base_price + np.cumsum(price_noise)
+        open_prices = close_prices - (np.random.randn(25) * step_volatility * 0.5)
+        high_prices = np.maximum(open_prices, close_prices) + (np.random.rand(25) * step_volatility * 0.7)
+        low_prices = np.minimum(open_prices, close_prices) - (np.random.rand(25) * step_volatility * 0.7)
+        
+        # Base volume & accumulation volume surge in last 5 days
+        base_vol = 25000000 if ticker in ("PTBA", "MEDC") else (50000000 if ticker == "BBCA" else 80000000)
+        volumes = np.random.randint(int(base_vol * 0.7), int(base_vol * 1.3), size=25)
+        volumes[-5:] = (volumes[-5:] * 2.1).astype(int)  # 210% surge during accumulation
+        
+        # 1. Subplot Layout: Row 1 (75%) Candlestick, Row 2 (25%) Volume
+        fig = make_subplots(
+            rows=2, cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            row_heights=[0.75, 0.25]
+        )
+        
+        # Row 1: Candlestick
+        fig.add_trace(
+            go.Candlestick(
+                x=dates,
+                open=open_prices,
+                high=high_prices,
+                low=low_prices,
+                close=close_prices,
+                name="Price",
+                increasing_line_color='#00D09C',
+                decreasing_line_color='#EB5757',
+                showlegend=False
+            ),
+            row=1, col=1
+        )
+        
+        # Consolidation Box in Row 1
+        box_start_idx = 8
         fig.add_shape(
             type="rect",
-            x0=dates[5], y0=min(low_prices[5:]),
-            x1=dates[-1], y1=max(high_prices[5:]),
-            line=dict(color="#A78BFA", width=1, dash="dash"),
-            fillcolor="rgba(167, 139, 250, 0.1)",
+            x0=dates[box_start_idx], y0=min(low_prices[box_start_idx:]),
+            x1=dates[-1], y1=max(high_prices[box_start_idx:]),
+            line=dict(color="#A78BFA", width=1.5, dash="dash"),
+            fillcolor="rgba(167, 139, 250, 0.12)",
+            row=1, col=1
         )
         
+        # Annotation for Consolidation Box
+        fig.add_annotation(
+            x=dates[box_start_idx + 3],
+            y=max(high_prices[box_start_idx:]),
+            text="Accumulation Box",
+            showarrow=False,
+            yshift=12,
+            font=dict(color="#A78BFA", size=11),
+            row=1, col=1
+        )
+        
+        # 2. Dynamic Volume Bar Coloring (Green if Close >= Open, Red if Close < Open)
+        vol_colors = ['#00D09C' if c >= o else '#EB5757' for c, o in zip(close_prices, open_prices)]
+        
+        fig.add_trace(
+            go.Bar(
+                x=dates,
+                y=volumes,
+                name="Volume",
+                marker_color=vol_colors,
+                showlegend=False
+            ),
+            row=2, col=1
+        )
+        
+        # 3. Financial Terminal Dark Theme Styling
         fig.update_layout(
             template="plotly_dark",
-            height=400,
+            height=480,
             margin=dict(l=10, r=10, t=30, b=10),
-            paper_bgcolor="#161922",
-            plot_bgcolor="#161922",
-            xaxis_rangeslider_visible=False
+            paper_bgcolor="#151821",
+            plot_bgcolor="#151821",
+            hovermode="x unified"
         )
+        
+        # Axis and Gridlines Styling
+        fig.update_xaxes(
+            gridcolor="#222734",
+            zerolinecolor="#222734",
+            rangeslider_visible=False
+        )
+        fig.update_yaxes(
+            title_text="Price (IDR)",
+            gridcolor="#222734",
+            zerolinecolor="#222734",
+            row=1, col=1
+        )
+        fig.update_yaxes(
+            title_text="Volume",
+            gridcolor="#222734",
+            zerolinecolor="#222734",
+            row=2, col=1
+        )
+        
         st.plotly_chart(fig, use_container_width=True)
         
     with col_right:
