@@ -122,63 +122,142 @@ if selected_menu.startswith("1."):
         fetch_companies_data()
         df_companies = load_companies()
     
-    # Top KPI Metrics
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown("""
-        <div class="metric-card">
-            <div class="metric-label">Emiten Dipindai</div>
-            <div class="metric-value">824 <span style="font-size:14px;color:#10B981;">(IDX)</span></div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <div class="metric-card">
-            <div class="metric-label">Accumulation Alerts</div>
-            <div class="metric-value" style="color:#A78BFA;">12 <span style="font-size:14px;color:#A78BFA;">Gems</span></div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-        <div class="metric-card">
-            <div class="metric-label">Avg Top 3 BCI</div>
-            <div class="metric-value" style="color:#34D399;">68.4%</div>
-        </div>
-        """, unsafe_allow_html=True)
-    with col4:
-        st.markdown("""
-        <div class="metric-card">
-            <div class="metric-label">Cache Efficiency</div>
-            <div class="metric-value" style="color:#FBBF24;">98.2%</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
+    # Master pool of screened candidates with quantitative metrics
+    master_radar_data = [
+        {"Ticker": "INCO", "Nama": "Vale Indonesia Tbk", "Sektor": "Basic Materials", "Close": 3890, "vol_surge_val": 240, "bci_val": 76.5, "Bandar Score": 94, "Status": "🔥 High Conviction"},
+        {"Ticker": "PTBA", "Nama": "Bukit Asam Tbk", "Sektor": "Energy", "Close": 2710, "vol_surge_val": 210, "bci_val": 72.4, "Bandar Score": 92, "Status": "🔥 High Conviction"},
+        {"Ticker": "BBCA", "Nama": "Bank Central Asia Tbk", "Sektor": "Financials", "Close": 10250, "vol_surge_val": 145, "bci_val": 68.1, "Bandar Score": 88, "Status": "💎 Strong Accumulation"},
+        {"Ticker": "MEDC", "Nama": "Medco Energi Internasional Tbk", "Sektor": "Energy", "Close": 1350, "vol_surge_val": 185, "bci_val": 64.8, "Bandar Score": 84, "Status": "💎 Strong Accumulation"},
+        {"Ticker": "MAPI", "Nama": "Mitra Adiperkasa Tbk", "Sektor": "Consumer Cyclicals", "Close": 1420, "vol_surge_val": 160, "bci_val": 66.0, "Bandar Score": 82, "Status": "💎 Strong Accumulation"},
+        {"Ticker": "BRMS", "Nama": "Bumi Resources Minerals Tbk", "Sektor": "Basic Materials", "Close": 172, "vol_surge_val": 195, "bci_val": 61.5, "Bandar Score": 78, "Status": "👀 Watchlist"},
+        {"Ticker": "GOTO", "Nama": "GoTo Gojek Tokopedia Tbk", "Sektor": "Technology", "Close": 54, "vol_surge_val": 175, "bci_val": 63.5, "Bandar Score": 77, "Status": "👀 Watchlist"},
+        {"Ticker": "ACES", "Nama": "Aspirasi Hidup Indonesia Tbk", "Sektor": "Consumer Cyclicals", "Close": 845, "vol_surge_val": 120, "bci_val": 59.2, "Bandar Score": 76, "Status": "👀 Watchlist"},
+        {"Ticker": "KLBF", "Nama": "Kalbe Farma Tbk", "Sektor": "Healthcare", "Close": 1210, "vol_surge_val": 130, "bci_val": 62.8, "Bandar Score": 74, "Status": "👀 Watchlist"},
+        {"Ticker": "TLKM", "Nama": "Telkom Indonesia Tbk", "Sektor": "Infrastructure", "Close": 2850, "vol_surge_val": 90, "bci_val": 58.0, "Bandar Score": 65, "Status": "🔍 Neutral / Low"},
+        {"Ticker": "ADRO", "Nama": "Adaro Energy Indonesia Tbk", "Sektor": "Energy", "Close": 3680, "vol_surge_val": 85, "bci_val": 54.0, "Bandar Score": 62, "Status": "🔍 Neutral / Low"},
+        {"Ticker": "ASII", "Nama": "Astra International Tbk", "Sektor": "Industrials", "Close": 4980, "vol_surge_val": 65, "bci_val": 52.0, "Bandar Score": 58, "Status": "🔍 Neutral / Low"}
+    ]
+    
+    # Placeholder container for top KPI metrics (displayed above tuning expander)
+    kpi_placeholder = st.container()
+
+    # 1. Parameter Tuning & Bandarmology Thresholds Panel
+    with st.expander("⚙️ Parameter Tuning & Bandarmology Thresholds", expanded=False):
+        t_col1, t_col2 = st.columns(2)
+        with t_col1:
+            min_bci = st.slider(
+                "Min Top 3 BCI (%)",
+                min_value=50,
+                max_value=90,
+                value=60,
+                step=5,
+                help="Batas minimal konsentrasi volume beli bersih oleh 3 broker teratas terhadap total turnover."
+            )
+            min_vol_surge = st.slider(
+                "Min Volume Surge (%)",
+                min_value=50,
+                max_value=500,
+                value=100,
+                step=25,
+                help="Batas minimal lonjakan volume transaksi harian dibandingkan rata-rata 20 hari (SMA20)."
+            )
+        with t_col2:
+            min_score = st.slider(
+                "Min Bandar Conviction Score",
+                min_value=50,
+                max_value=95,
+                value=70,
+                step=5,
+                help="Batas minimal skor komposit akumulasi cerdas (0-100)."
+            )
+            all_sectors = sorted(list(set(r["Sektor"] for r in master_radar_data)))
+            selected_sectors = st.multiselect(
+                "Filter Sektor Bursa",
+                options=all_sectors,
+                default=all_sectors,
+                help="Pilih sektor yang ingin dipantau."
+            )
+
+    # 2. Reactive Filtering Logic
+    filtered_records = [
+        r for r in master_radar_data
+        if r["bci_val"] >= min_bci
+        and r["vol_surge_val"] >= min_vol_surge
+        and r["Bandar Score"] >= min_score
+        and (not selected_sectors or r["Sektor"] in selected_sectors)
+    ]
+
+    # Calculate reactive KPI values
+    alerts_count = len(filtered_records)
+    avg_bci_val = float(np.mean([r["bci_val"] for r in filtered_records])) if filtered_records else 0.0
+
+    # Render Top KPI Cards into the placeholder container
+    with kpi_placeholder:
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.markdown("""
+            <div class="metric-card">
+                <div class="metric-label">Emiten Dipindai</div>
+                <div class="metric-value">824 <span style="font-size:14px;color:#10B981;">(IDX)</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col2:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Accumulation Alerts</div>
+                <div class="metric-value" style="color:#A78BFA;">{alerts_count} <span style="font-size:14px;color:#A78BFA;">Gems</span></div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col3:
+            st.markdown(f"""
+            <div class="metric-card">
+                <div class="metric-label">Avg Top 3 BCI</div>
+                <div class="metric-value" style="color:#34D399;">{avg_bci_val:.1f}%</div>
+            </div>
+            """, unsafe_allow_html=True)
+        with col4:
+            st.markdown("""
+            <div class="metric-card">
+                <div class="metric-label">Cache Efficiency</div>
+                <div class="metric-value" style="color:#FBBF24;">98.2%</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
     st.markdown("### 🎯 Sinyal Akumulasi Diam-diam Hari Ini")
     
-    # Screener Table with Quant Metrics
-    radar_data = [
-        {"Ticker": "PTBA", "Nama": "Bukit Asam Tbk", "Sektor": "Energy", "Close": 2710, "Vol Surge": "+210%", "Top 3 BCI": "72.4%", "Status": "🔥 High Conviction", "Bandar Score": 92},
-        {"Ticker": "BBCA", "Nama": "Bank Central Asia Tbk", "Sektor": "Financials", "Close": 10250, "Vol Surge": "+145%", "Top 3 BCI": "68.1%", "Status": "💎 Strong Accumulation", "Bandar Score": 88},
-        {"Ticker": "MEDC", "Nama": "Medco Energi Internasional Tbk", "Sektor": "Energy", "Close": 1350, "Vol Surge": "+185%", "Top 3 BCI": "64.8%", "Status": "💎 Strong Accumulation", "Bandar Score": 84},
-        {"Ticker": "ACES", "Nama": "Aspirasi Hidup Indonesia Tbk", "Sektor": "Consumer Cyclicals", "Close": 845, "Vol Surge": "+120%", "Top 3 BCI": "59.2%", "Status": "👀 Watchlist", "Bandar Score": 76},
-        {"Ticker": "BRMS", "Nama": "Bumi Resources Minerals Tbk", "Sektor": "Basic Materials", "Close": 172, "Vol Surge": "+195%", "Top 3 BCI": "61.5%", "Status": "👀 Watchlist", "Bandar Score": 78}
-    ]
-    df_radar = pd.DataFrame(radar_data)
-    
-    st.dataframe(
-        df_radar,
-        column_config={
-            "Bandar Score": st.column_config.ProgressColumn(
-                "Bandar Score (0-100)",
-                help="Kombinasi skor BCI, lonjakan volume, dan konsolidasi harga",
-                format="%d",
-                min_value=0,
-                max_value=100
-            ),
-        },
-        use_container_width=True,
-        hide_index=True
-    )
+    # 3. Render Table or Empty State
+    if not filtered_records:
+        st.info("Tidak ada emiten yang memenuhi kriteria tuning saat ini. Coba turunkan ambang batas.")
+    else:
+        # Prepare display dataframe
+        table_rows = []
+        for r in filtered_records:
+            table_rows.append({
+                "Ticker": r["Ticker"],
+                "Nama": r["Nama"],
+                "Sektor": r["Sektor"],
+                "Close (IDR)": f"Rp {r['Close']:,}",
+                "Vol Surge": f"+{r['vol_surge_val']}%",
+                "Top 3 BCI": f"{r['bci_val']:.1f}%",
+                "Status": r["Status"],
+                "Bandar Score": r["Bandar Score"]
+            })
+        df_display = pd.DataFrame(table_rows)
+        
+        st.dataframe(
+            df_display,
+            column_config={
+                "Bandar Score": st.column_config.ProgressColumn(
+                    "Bandar Score (0-100)",
+                    help="Kombinasi skor BCI, lonjakan volume, dan konsolidasi harga",
+                    format="%d",
+                    min_value=0,
+                    max_value=100
+                ),
+            },
+            use_container_width=True,
+            hide_index=True
+        )
 
 # ================= MENU 2: ACCUMULATION FORENSICS =================
 elif selected_menu.startswith("2."):
